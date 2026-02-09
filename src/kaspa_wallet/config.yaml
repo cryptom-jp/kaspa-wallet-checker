@@ -1,0 +1,21 @@
+# Kaspa Wallet 設定ファイル
+
+grpc:
+  address: "localhost:16110"
+  timeout: 10
+  max_retries: 3
+  base_delay: 1.0
+  max_receive_message_length: 52428800
+  max_send_message_length: 52428800
+
+logging:
+  level: "INFO"
+  file: "/Users/tradingtom/KaspaDev/logs/balance.log"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  console: true
+
+validation:
+  min_address_length: 40
+  allowed_prefixes:
+    - "kaspa:"
+    - "kaspatest:"

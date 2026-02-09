@@ -1,0 +1,142 @@
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import subprocess
+import json
+import os
+
+app = Flask(__name__)
+CORS(app)
+
+PROJECT_ROOT = os.path.expanduser('~/KaspaDev')
+BALANCE_SCRIPT = os.path.join(PROJECT_ROOT, 'src', 'kaspa_wallet', 'balance.py')
+
+@app.route('/')
+def index():
+    """トップページ"""
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Kaspa Balance Checker</title>
+        <meta charset="utf-8">
+        <style>
+            body { font-family: Arial; max-width: 800px; margin: 50px auto; padding: 20px; }
+            h1 { color: #49C2A2; }
+            input { width: 100%; padding: 10px; margin: 10px 0; font-size: 14px; }
+            button { background: #49C2A2; color: white; padding: 10px 20px; border: none; cursor: pointer; font-size: 16px; }
+            button:hover { background: #3aa88a; }
+            .result { margin-top: 20px; padding: 15px; background: #f5f5f5; border-radius: 5px; }
+            .error { color: red; }
+            .success { color: green; }
+        </style>
+    </head>
+    <body>
+        <h1>🔷 Kaspa Balance Checker (gRPC版)</h1>
+        <p>Kaspaアドレスの残高を確認します</p>
+        
+        <input type="text" id="address" placeholder="kaspa:qqk9m5z05ej8e0j4tmx9geaqw6zeexa46pllgqllv28krv0cpgr9ucl3x5gxp" value="kaspa:qqk9m5z05ej8e0j4tmx9geaqw6zeexa46pllgqllv28krv0cpgr9ucl3x5gxp">
+        <button onclick="checkBalance()">残高を確認</button>
+        
+        <div id="result" class="result" style="display:none;"></div>
+        
+        <script>
+        async function checkBalance() {
+            const address = document.getElementById('address').value.trim();
+            const resultDiv = document.getElementById('result');
+            
+            if (!address) {
+                resultDiv.innerHTML = '<span class="error">アドレスを入力してください</span>';
+                resultDiv.style.display = 'block';
+                return;
+            }
+            
+            resultDiv.innerHTML = '⏳ 確認中...';
+            resultDiv.style.display = 'block';
+            
+            try {
+                const response = await fetch(`/api/balance?address=${encodeURIComponent(address)}`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    resultDiv.innerHTML = `<span class="error">❌ エラー: ${data.error}<br>詳細: ${data.message || data.detail || ''}</span>`;
+                } else {
+                    resultDiv.innerHTML = `
+                        <span class="success">✅ 残高取得成功</span><br><br>
+                        <strong>アドレス:</strong> ${data.address}<br>
+                        <strong>残高:</strong> ${data.balance_kas.toFixed(8)} KAS<br>
+                        <strong>残高 (sompi):</strong> ${data.balance_sompi.toLocaleString()} sompi
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">❌ 通信エラー: ${error.message}</span>`;
+            }
+        }
+        </script>
+    </body>
+    </html>
+    '''
+
+@app.route('/api/balance', methods=['GET'])
+def api_balance():
+    address = request.args.get('address', '').strip()
+    app.logger.info(f'/api/balance address={address}')
+    
+    if not address:
+        return jsonify({'error': 'address query parameter is required'}), 400
+    
+        try:
+        python_path = os.path.join(PROJECT_ROOT, 'kaspa_venv', 'bin', 'python3')
+        
+        result = subprocess.run(
+            [python_path, BALANCE_SCRIPT, address],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=15
+        )
+        
+        stdout = result.stdout.strip()
+        stderr = result.stderr.strip()
+        
+        # まず stdout を JSON として解釈（成功・エラー両方）
+        if stdout:
+            try:
+                data = json.loads(stdout)
+                # balance.py が error フィールド付きJSONを返した場合も、そのまま返す
+                status_code = 200
+                if isinstance(data, dict) and data.get("error"):
+                    # アドレスエラーなどはクライアントエラーとして扱う
+                    status_code = 400
+                return jsonify(data), status_code
+            except json.JSONDecodeError:
+                # JSONでなければ下の処理へフォールバック
+                pass
+        
+        # stdout がJSONでなく、かつ returncode != 0 の場合
+        if result.returncode != 0:
+            app.logger.error(f'balance.py error: {stderr}')
+            return jsonify({
+                'error': 'balance.py failed',
+                'detail': stderr or 'no stderr output',
+                'raw_output': stdout
+            }), 500
+        
+        # 想定外ケース
+        return jsonify({
+            "address": address,
+            "balance_kas": 0,
+            "raw_output": stdout,
+            "detail": stderr,
+        }), 500
+
+
+    except subprocess.TimeoutExpired:
+        app.logger.error('balance.py timeout')
+        return jsonify({'error': 'balance.py timeout'}), 504
+    except Exception as e:
+        app.logger.exception('unexpected error in /api/balance')
+        return jsonify({'error': str(e)}), 500
+
+
+if __name__ == '__main__':
+    app.run(host='127.0.0.1', port=5000, debug=True)

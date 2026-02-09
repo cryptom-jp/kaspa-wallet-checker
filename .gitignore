@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+kaspa_venv/
+venv/
+env/
+
+# Logs
+*.log
+logs/*.log
+
+# Configuration (秘密鍵や個人情報を含む可能性)
+*.yaml.local
+*.env
+.env.local
+
+# Backup
+backup/
+*.bak
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Kaspa node data (容量が大きいため除外)
+rusty-kaspa/target/
+*.db
+*.sqlite
+
+# Sensitive data (絶対に公開しない)
+*_private_key*
+*seed*
+*mnemonic*
